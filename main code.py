@@ -6,7 +6,6 @@ import random
 import numpy.matlib
 import multiprocessing as mp
 import math
-import numpy.matlib
 import time
 import os
 import SNC
@@ -18,7 +17,7 @@ GAMMA = 0.9
 ENTROPY_BETA = 0.001
 LR_A = 0.001
 LR_C = 0.001
-N_S = 7
+N_S = 8
 N_A = 33
 UE_num = 6
 MEMORY_SIZE = 3000
@@ -62,10 +61,10 @@ class env_snc():
         self.agent = UE_num
         self.action = range(ACTION_SPACE)
         self.n_actions = ACTION_SPACE
-        self.n_features = 7
-        self.state = np.zeros(37)
-        self.state_all = np.zeros(37)
-        self.state_ = np.zeros(37)
+        self.n_features = 8
+        self.state = np.zeros(43)
+        self.state_all = np.zeros(43)
+        self.state_ = np.zeros(43)
         self.SINR_0 = np.ones(UE_num) * SINR_ave
         self.n_RE = np.zeros(UE_num)
         self.W_num = np.zeros(UE_num)
@@ -103,6 +102,7 @@ class env_snc():
             self.state[self.agent * 3 + 1 + i] = W_total_list[action_index]
             self.state[self.agent * 4 + 1 + i] = action_index
             self.state[self.agent * 5 + 1 + i] = SINR_ave[i]
+            self.state[self.agent * 6 + 1 + i] = 0
             W_sum = W_sum + W_num_real_total
         self.state[0] = band_total - W_sum
         return self.state, action_ori
@@ -181,9 +181,11 @@ class env_snc():
                 self.state_[self.agent * 4 + 1 + i] = observation[self.agent * 4 + 1 + i]
                 self.state_[self.agent * 5 + 1 + i] = observation[self.agent * 5 + 1 + i]
                 if i == UE_index:
-                    self.state_[self.agent * 3 + 1 + i] =  W_num_total
+                    self.state_[self.agent * 3 + 1 + i] = W_num_total
+                    self.state_[self.agent * 6 + 1 + i] = reward
                 else:
                     self.state_[self.agent * 3 + 1 + i] = observation[self.agent * 3 + 1 + i]
+                    self.state_[self.agent * 6 + 1 + i] = observation[self.agent * 6 + 1 + i]
             action = action_index
         self.reward = reward
         return self.state_, self.reward, eplison_0, r, n_PD, W_num_total, action, self.calc, TTI_size
@@ -312,11 +314,11 @@ def work(job_name, task_index, global_ep, lock, r_queue, global_running_r):
                     W_num_total_step = []
                     eplison_step = []
                     eplison_c_step = []
-                    observation_0_set = np.zeros(37)
-                    observation_set = np.zeros(37)
+                    observation_0_set = np.zeros(43)
+                    observation_set = np.zeros(43)
                     for i in range(UE_num):
                         UE_index = i
-                        action_index = local_net.choose_action( [observation[0], observation[i + 1], observation[UE_num + i + 1],observation[UE_num * 2 + i + 1],observation[UE_num * 3 + i + 1],observation[UE_num * 4 + i + 1],observation[UE_num *5 + i + 1]])
+                        action_index = local_net.choose_action([observation[0], observation[i + 1], observation[UE_num + i + 1],observation[UE_num * 2 + i + 1],observation[UE_num * 3 + i + 1],observation[UE_num * 4 + i + 1],observation[UE_num *5 + i + 1],observation[UE_num *6 + i + 1]])
                         action_index_set_0[i] = action_index
                         observation_0_set = np.row_stack((observation_0_set, observation))
                         observation_, reward, eplison_0, r, n_PD, W_num_total, action, calc, TTI_size = env.step(action_index, UE_index, observation)
@@ -377,7 +379,7 @@ def work(job_name, task_index, global_ep, lock, r_queue, global_running_r):
                             SE_norm = 1
                     reward_sum = round((EE_norm ** uplison) * (SE_norm ** (1 - uplison)) - penalty_num,3)
                     for i in range(UE_num):
-                        buffer_s.append([observation_0_set[i+1,0],observation_0_set[i+1,i+1],observation_0_set[i+1,UE_num+i+1],observation_0_set[i+1,UE_num*2+i+1],observation_0_set[i+1,UE_num*3+i+1],observation_0_set[i+1,UE_num*4+i+1],observation_0_set[i+1,UE_num*5+i+1]])  # 将当前状态，行动和回报加入缓存
+                        buffer_s.append([observation_0_set[i+1,0],observation_0_set[i+1,i+1],observation_0_set[i+1,UE_num+i+1],observation_0_set[i+1,UE_num*2+i+1],observation_0_set[i+1,UE_num*3+i+1],observation_0_set[i+1,UE_num*4+i+1],observation_0_set[i+1,UE_num*5+i+1],observation_0_set[i+1,UE_num*6+i+1]])  # 将当前状态，行动和回报加入缓存
                         buffer_a.append(action_index_set_0[i])
                         buffer_r.append(reward_sum*10)
                     done = False
@@ -389,7 +391,7 @@ def work(job_name, task_index, global_ep, lock, r_queue, global_running_r):
                         if done:
                             v_s_ = 0
                         else:
-                            observation_ = np.array([observation_[0],observation_[i+1],observation_[UE_num+i+1],observation_[UE_num*2+i+1],observation_[UE_num*3+i+1],observation_[UE_num*4+i+1],observation_[UE_num*5+i+1]])
+                            observation_ = np.array([observation_[0],observation_[i+1],observation_[UE_num+i+1],observation_[UE_num*2+i+1],observation_[UE_num*3+i+1],observation_[UE_num*4+i+1],observation_[UE_num*5+i+1],observation_[UE_num*6+i+1]])
                             v_s_ = sess.run(local_net.v, {local_net.s: observation_[np.newaxis, :]})[0, 0]
                         buffer_v_target = []
                         for r in buffer_r[::-1]:
